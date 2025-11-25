@@ -549,48 +549,61 @@ class ElegantFoodApp:
         ProfileDialog(self, self.diet_tracker)
 
     def classify_image(self):
+        # Открываем диалог выбора файла с изображением
         file_path = filedialog.askopenfilename(
             title="Выберите изображение еды",
             filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp")]
         )
 
+        # Если пользователь не выбрал файл - выходим
         if not file_path:
             return
 
+        # Проверяем, загружена ли модель нейросети
         if not self.model_loader.model:
             messagebox.showerror("Ошибка", "Модель анализа не загружена")
             return
 
+        # Показываем анимацию загрузки и блокируем кнопки
         self.progress.start()
         self.load_btn.configure(state="disabled")
         self.add_to_diet_btn.configure(state="disabled")
 
         try:
+            # Открываем и подготавливаем изображение для показа
             image_pil = Image.open(file_path)
             image_display = image_pil.resize((340, 250), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(image_display)
 
+            # Показываем изображение в интерфейсе
             self.image_label.configure(image=photo, text="")
             self.image_label.image = photo
 
             from tensorflow.keras.preprocessing import image
             import numpy as np
 
+            # ПОДГОТОВКА ДЛЯ НЕЙРОСЕТИ:
+            # Загружаем изображение с нужным размером (128x128)
             test_image = image.load_img(file_path, target_size=self.model_loader.target_size)
-            test_image = image.img_to_array(test_image)
-            test_image = np.expand_dims(test_image, axis=0)
-            test_image = self.model_loader.custom_preprocess(test_image)
+            test_image = image.img_to_array(test_image)  # Преобразуем в числовой массив
+            test_image = np.expand_dims(test_image, axis=0)  # Добавляем размерность батча
+            test_image = self.model_loader.custom_preprocess(test_image)  # Нормализуем данные
 
+            # ЗАПУСК НЕЙРОСЕТИ:
+            # Получаем предсказания от модели
             predictions = self.model_loader.model.predict(test_image, verbose=0)
-            class_index = np.argmax(predictions)
-            self.current_food = self.model_loader.class_names[class_index]
-            self.current_confidence = predictions[0][class_index] * 100
+            class_index = np.argmax(predictions)  # Находим индекс самого вероятного класса
+            self.current_food = self.model_loader.class_names[class_index]  # Название еды
+            self.current_confidence = predictions[0][class_index] * 100  # Уверность в %
 
+            # Получаем информацию о пищевой ценности
             food_data = self.model_loader.get_food_info(self.current_food)
 
+            # Формируем заголовок результата
             result_text = f"Распознано: {self.current_food.replace('_', ' ').title()}"
             self.result_title.configure(text=result_text, text_color=self.colors["accent_dark"])
 
+            # Формируем детальную информацию
             detail_text = f"Точность анализа: {self.current_confidence:.1f}%\n\n"
             detail_text += f"Энергетическая ценность: {food_data.get('calories', 'N/A')} ккал\n\n"
             detail_text += f"Белки: {food_data.get('protein', 'N/A')}г\n"
@@ -598,13 +611,17 @@ class ElegantFoodApp:
             detail_text += f"Жиры: {food_data.get('fat', 'N/A')}г\n\n"
             detail_text += f"Оценка питательности: {food_data.get('health_score', 'N/A')}/10"
 
+            # Показываем результаты
             self.result_details.configure(text=detail_text)
 
+            # Разблокируем кнопку добавления в дневник
             self.add_to_diet_btn.configure(state="normal")
 
         except Exception as e:
+            # Если что-то пошло не так - показываем ошибку
             messagebox.showerror("Ошибка", f"Ошибка при обработке изображения:\n{str(e)}")
         finally:
+            # Всегда убираем анимацию загрузки и разблокируем кнопки
             self.progress.stop()
             self.load_btn.configure(state="normal")
 
