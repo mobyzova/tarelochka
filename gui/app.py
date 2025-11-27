@@ -549,104 +549,123 @@ class ElegantFoodApp:
         ProfileDialog(self, self.diet_tracker)
 
     def classify_image(self):
-        # Открываем диалог выбора файла с изображением
         file_path = filedialog.askopenfilename(
             title="Выберите изображение еды",
             filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp")]
         )
 
-        # Если пользователь не выбрал файл - выходим
         if not file_path:
             return
 
-        # Проверяем, загружена ли модель нейросети
+        self.current_image_path = file_path
+
         if not self.model_loader.model:
             messagebox.showerror("Ошибка", "Модель анализа не загружена")
             return
 
-        # Показываем анимацию загрузки и блокируем кнопки
         self.progress.start()
         self.load_btn.configure(state="disabled")
         self.add_to_diet_btn.configure(state="disabled")
 
         try:
-            # Открываем и подготавливаем изображение для показа
             image_pil = Image.open(file_path)
             image_display = image_pil.resize((340, 250), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(image_display)
 
-            # Показываем изображение в интерфейсе
             self.image_label.configure(image=photo, text="")
             self.image_label.image = photo
 
             from tensorflow.keras.preprocessing import image
             import numpy as np
 
-            # ПОДГОТОВКА ДЛЯ НЕЙРОСЕТИ:
-            # Загружаем изображение с нужным размером (128x128)
             test_image = image.load_img(file_path, target_size=self.model_loader.target_size)
-            test_image = image.img_to_array(test_image)  # Преобразуем в числовой массив
-            test_image = np.expand_dims(test_image, axis=0)  # Добавляем размерность батча
-            test_image = self.model_loader.custom_preprocess(test_image)  # Нормализуем данные
+            test_image = image.img_to_array(test_image)
+            test_image = np.expand_dims(test_image, axis=0)
+            test_image = self.model_loader.custom_preprocess(test_image)
 
-            # ЗАПУСК НЕЙРОСЕТИ:
-            # Получаем предсказания от модели
             predictions = self.model_loader.model.predict(test_image, verbose=0)
-            class_index = np.argmax(predictions)  # Находим индекс самого вероятного класса
-            self.current_food = self.model_loader.class_names[class_index]  # Название еды
-            self.current_confidence = predictions[0][class_index] * 100  # Уверность в %
+            class_index = np.argmax(predictions)
+            self.current_food = self.model_loader.class_names[class_index]
+            self.current_confidence = predictions[0][class_index] * 100
 
-            # Получаем информацию о пищевой ценности
-            food_data = self.model_loader.get_food_info(self.current_food)
+            # ОБНОВЛЕННАЯ ЧАСТЬ: Получаем информацию с оценкой по изображению
+            food_data = self.model_loader.get_food_info(self.current_food, file_path)
 
-            # Формируем заголовок результата
             result_text = f"Распознано: {self.current_food.replace('_', ' ').title()}"
             self.result_title.configure(text=result_text, text_color=self.colors["accent_dark"])
 
-            # Формируем детальную информацию
+            # Формируем детальную информацию с указанием метода оценки
             detail_text = f"Точность анализа: {self.current_confidence:.1f}%\n\n"
-            detail_text += f"Энергетическая ценность: {food_data.get('calories', 'N/A')} ккал\n\n"
-            detail_text += f"Белки: {food_data.get('protein', 'N/A')}г\n"
-            detail_text += f"Углеводы: {food_data.get('carbs', 'N/A')}г\n"
-            detail_text += f"Жиры: {food_data.get('fat', 'N/A')}г\n\n"
-            detail_text += f"Оценка питательности: {food_data.get('health_score', 'N/A')}/10"
 
-            # Показываем результаты
+            if food_data.get('estimation_method') == 'volume_based':
+                detail_text += "📊 ОЦЕНКА ПО ИЗОБРАЖЕНИЮ:\n"
+                detail_text += f"• Объем: {food_data.get('estimated_volume', 0):.1f} см³\n"
+                detail_text += f"• Масса: {food_data.get('estimated_mass', food_data.get('estimated_mass_g', 0)):.1f} г\n"  # Исправленный ключ
+                detail_text += f"• Калории: {food_data.get('calories', 0):.1f} ккал\n"
+                detail_text += f"• Белки: {food_data.get('protein', 0):.1f}г\n"
+                detail_text += f"• Углеводы: {food_data.get('carbs', 0):.1f}г\n"
+                detail_text += f"• Жиры: {food_data.get('fat', 0):.1f}г\n"
+            else:
+                detail_text += "📋 БАЗОВЫЕ ДАННЫЕ:\n"
+                detail_text += f"• Калории: {food_data.get('calories', 'N/A')} ккал\n"
+                detail_text += f"• Белки: {food_data.get('protein', 'N/A')}г\n"
+                detail_text += f"• Углеводы: {food_data.get('carbs', 'N/A')}г\n"
+                detail_text += f"• Жиры: {food_data.get('fat', 'N/A')}г\n"
+
+            detail_text += f"\n• Оценка питательности: {food_data.get('health_score', 'N/A')}/10"
+
             self.result_details.configure(text=detail_text)
-
-            # Разблокируем кнопку добавления в дневник
             self.add_to_diet_btn.configure(state="normal")
 
         except Exception as e:
-            # Если что-то пошло не так - показываем ошибку
             messagebox.showerror("Ошибка", f"Ошибка при обработке изображения:\n{str(e)}")
         finally:
-            # Всегда убираем анимацию загрузки и разблокируем кнопки
             self.progress.stop()
             self.load_btn.configure(state="normal")
 
+
     def add_to_diet(self):
-        if not self.current_food:
-            messagebox.showwarning("Предупреждение", "Сначала выполните анализ изображения")
-            return
+            if not self.current_food:
+                messagebox.showwarning("Предупреждение", "Сначала выполните анализ изображения")
+                return
 
-        food_data = self.model_loader.get_food_info(self.current_food)
-        if not food_data:
-            return
+            # Получаем актуальные данные (с оценкой по изображению)
+            file_path = getattr(self, 'current_image_path', None)
+            if file_path and os.path.exists(file_path):
+                food_data = self.model_loader.get_food_info(self.current_food, file_path)
+            else:
+                food_data = self.model_loader.get_food_info(self.current_food)
 
-        meal_data = {
-            'name': self.current_food,
-            'calories': food_data['calories'],
-            'protein': food_data['protein'],
-            'carbs': food_data['carbs'],
-            'fat': food_data['fat'],
-            'health_score': food_data['health_score'],
-            'confidence': self.current_confidence
-        }
+            if not food_data:
+                return
+            # Используем данные из food_data
+            meal_data = {
+                'name': self.current_food,
+                'calories': food_data['calories'],
+                'protein': food_data['protein'],
+                'carbs': food_data['carbs'],
+                'fat': food_data['fat'],
+                'health_score': food_data['health_score'],
+                'confidence': self.current_confidence,
+                'estimation_method': food_data.get('estimation_method', 'database')
+            }
 
-        self.diet_tracker.add_meal(meal_data)
-        self.update_diet_display()
-        messagebox.showinfo("Успех", f"{self.current_food.replace('_', ' ').title()} добавлен в рацион")
+            # Добавляем дополнительную информацию если есть
+            if 'estimated_mass' in food_data:
+                meal_data['estimated_mass'] = food_data['estimated_mass']
+            if 'estimated_volume' in food_data:
+                meal_data['estimated_volume'] = food_data['estimated_volume']
+
+            self.diet_tracker.add_meal(meal_data)
+            self.update_diet_display()
+
+            method = food_data.get('estimation_method', 'базовые данные')
+            calories_value = meal_data['calories']
+
+            messagebox.showinfo("Успех",
+                                f"{self.current_food.replace('_', ' ').title()} добавлен в рацион\n"
+                                f"Метод оценки: {method}\n"
+                                f"Калории: {calories_value} ккал")
 
     def clear_diet(self):
         if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите очистить весь рацион?"):
@@ -671,9 +690,11 @@ class ElegantFoodApp:
             sidebar_text = "Добавьте\nпервый прием пищи"
         self.sidebar_stats.configure(text=sidebar_text)
 
+        # Очищаем список приемов пищи
         for widget in self.meals_listbox.winfo_children():
             widget.destroy()
 
+        # Добавляем приемы пищи с округленными значениями
         for meal in stats['meals']:
             meal_frame = ctk.CTkFrame(
                 self.meals_listbox,
@@ -688,6 +709,12 @@ class ElegantFoodApp:
 
             meal_frame.grid_columnconfigure(0, weight=1)
 
+            # Округляем значения для отображения
+            calories = round(meal['calories'])
+            protein = round(meal['protein'])
+            carbs = round(meal['carbs'])
+            fat = round(meal['fat'])
+
             ctk.CTkLabel(
                 meal_frame,
                 text=f"{meal['time']} - {meal['name'].replace('_', ' ').title()}",
@@ -697,7 +724,7 @@ class ElegantFoodApp:
 
             ctk.CTkLabel(
                 meal_frame,
-                text=f"{meal['calories']} ккал • Белки: {meal['protein']}г • Углеводы: {meal['carbs']}г • Жиры: {meal['fat']}г",
+                text=f"{calories} ккал • Белки: {protein}г • Углеводы: {carbs}г • Жиры: {fat}г",
                 font=ctk.CTkFont(family="Arial", size=12),
                 text_color=self.colors["text_primary"]
             ).grid(row=1, column=0, sticky="w", padx=20, pady=(0, 12))

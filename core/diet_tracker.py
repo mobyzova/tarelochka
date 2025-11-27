@@ -19,8 +19,12 @@ class DietTracker:
             'fat': meal_data['fat'],
             'health_score': meal_data['health_score'],
             'time': datetime.datetime.now().strftime("%H:%M"),
-            'confidence': meal_data.get('confidence', 0)
+            'confidence': meal_data.get('confidence', 0),
+            'input_method': meal_data.get('input_method', 'image')
         }
+
+        if 'quantity' in meal_data:
+            meal['quantity'] = meal_data['quantity']
 
         self.daily_meals.append(meal)
         self.total_calories += meal_data['calories']
@@ -38,12 +42,13 @@ class DietTracker:
     def get_diet_stats(self):
         metrics = self.user_profile.profile["рассчитанные_метрики"]
 
+        # Округляем все значения до целых
         return {
             'total_meals': len(self.daily_meals),
-            'total_calories': self.total_calories,
-            'total_protein': self.total_protein,
-            'total_carbs': self.total_carbs,
-            'total_fat': self.total_fat,
+            'total_calories': round(self.total_calories),
+            'total_protein': round(self.total_protein),
+            'total_carbs': round(self.total_carbs),
+            'total_fat': round(self.total_fat),
             'meals': self.daily_meals,
             'daily_goals': {
                 'calories': metrics['дневные_калории'],
